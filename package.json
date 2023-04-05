@@ -9,6 +9,9 @@
     "build": "tsc",
     "prepublish": "pnpm run build"
   },
+  "files": [
+    "./dist"
+  ],
   "keywords": [],
   "author": "",
   "license": "ISC",

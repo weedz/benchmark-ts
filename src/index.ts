@@ -114,15 +114,26 @@ export function printResultsTable(results: Result[]) {
             comparisons
         });
     }
+
+    const table: Record<string, {}> = {};
     
     for (const [label, result] of resultMap.entries()) {
-        process.stdout.write(`${label} (${result.rate.toFixed(2)}/s):\n`);
+        const row: any = {
+            "Op/s": result.rate.toFixed(2)
+        };
+        // process.stdout.write(`${label} (${result.rate.toFixed(2)}/s):\n`);
         for (const [compareLabel, compareResult] of Object.entries(result.comparisons)) {
             if (compareLabel === label) {
+                row[compareLabel] = "-";
                 continue;
             }
             const percentage = (compareResult - 1) * 100;
-            process.stdout.write(`  ${compareLabel}: ${percentage.toFixed(2)}% (${compareResult.toFixed(2)}x)\n`);
+            // process.stdout.write(`  ${compareLabel}: ${percentage.toFixed(2)}% (${compareResult.toFixed(2)}x)\n`);
+
+            row[compareLabel] = compareResult.toFixed(2)
         }
+        table[label] = row;
     }
+    console.table(table);
+    return table;
 }

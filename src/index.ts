@@ -60,18 +60,22 @@ export type TestArray = Array<{
     args?: any[]
 }>
 
-export function runTests(tests: TestArray, print: boolean = false) {
+export function runTests(tests: TestArray, opts: Partial<{
+    print: boolean
+    time: number
+}> = {}) {
+    opts.time ||= 5000;
     const results: Result[] = [];
     for (const test of tests) {
         process.stdout.write(`Running '${test.label}'...\n`);
-        const perf = meassureExecutionTime(5000, test.fn, test.args);
+        const perf = meassureExecutionTime(opts.time, test.fn, test.args);
 
         const result = {
             label: test.label,
             performance: perf
         };
 
-        if (print) {
+        if (opts.print) {
             printResult(result);
             process.stdout.write("\n");
         }

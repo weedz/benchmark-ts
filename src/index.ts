@@ -9,17 +9,17 @@ declare module 'perf_hooks' {
 const NANOSECONDS_IN_MILLISECONDS = 1_000_000;
 
 
-function meassureExecutionTime(ms: number, fn: (...args: unknown[]) => unknown, ...args: unknown[]): PerfResult {
+function meassureExecutionTime(ms: number, fn: (...args: unknown[]) => unknown, args: unknown[] = []): PerfResult {
     // "Prime"
-    fn(args);
-    fn(args);
-    fn(args);
+    fn(...args);
+    fn(...args);
+    fn(...args);
 
     const start = performance.now();
     let elapsedTime = 0;
     const histogram = createHistogram();
     while (elapsedTime < ms) {
-        fn(args);
+        fn(...args);
         histogram.recordDelta();
         elapsedTime = performance.now() - start;
     }
@@ -56,14 +56,15 @@ type Result = {
 
 export type TestArray = Array<{
     label: string
-    fn: (...args: unknown[]) => void
+    fn: (...args: any[]) => void
+    args?: any[]
 }>
 
 export function runTests(tests: TestArray, print: boolean = false) {
     const results: Result[] = [];
     for (const test of tests) {
         process.stdout.write(`Running '${test.label}'...\n`);
-        const perf = meassureExecutionTime(5000, test.fn);
+        const perf = meassureExecutionTime(5000, test.fn, test.args);
 
         const result = {
             label: test.label,

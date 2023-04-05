@@ -78,7 +78,7 @@ export function runTests(tests: TestArray, print: boolean = false) {
     
         results.push(result);
     }
-    return results;
+    return results.sort( (a,b) => a.performance.ops > b.performance.ops ? -1 : 0);
 }
 
 export function printResult(result: Result) {

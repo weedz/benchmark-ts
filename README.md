@@ -3,7 +3,7 @@
 ## Example:
 
 ```typescript
-import { runTests, printResults, printResultsTable, TestArray } from "./benchmark";
+import { runTests, printResults, printResultsTable, TestArray } from "@weedzcokie/benchmark";
 
 function cellNumberToName(x: number) {
     let name = "";
@@ -28,6 +28,13 @@ function mapAssignment() {
     }
     return map;
 }
+function setAssignment() {
+    const set = new Set();
+    for (const x of lookups) {
+        set.add(x);
+    }
+    return set;
+}
 function objectAssignment() {
     const object: Record<string, boolean> = {};
     for (const x of lookups) {
@@ -42,6 +49,10 @@ const tests: TestArray = [
         label: "Map assignment"
     },
     {
+        fn: setAssignment,
+        label: "Set assignment"
+    },
+    {
         fn: objectAssignment,
         label: "Object assignment"
     },
@@ -50,4 +61,15 @@ const tests: TestArray = [
 const results = runTests(tests);
 printResults(results);
 printResultsTable(results);
+```
+
+Output:
+```
+┌───────────────────┬──────────┬────────────────┬────────────────┬───────────────────┐
+│      (index)      │   Op/s   │ Set assignment │ Map assignment │ Object assignment │
+├───────────────────┼──────────┼────────────────┼────────────────┼───────────────────┤
+│  Set assignment   │ '171.44' │      '-'       │     '1.11'     │      '1.47'       │
+│  Map assignment   │ '155.09' │     '0.90'     │      '-'       │      '1.33'       │
+│ Object assignment │ '116.68' │     '0.68'     │     '0.75'     │        '-'        │
+└───────────────────┴──────────┴────────────────┴────────────────┴───────────────────┘
 ```

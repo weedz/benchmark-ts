@@ -14,20 +14,27 @@ function meassureExecutionTime(ms: number, fn: (...args: unknown[]) => unknown, 
     fn(...args);
     fn(...args);
     fn(...args);
-
-    const start = performance.now();
-    let elapsedTime = 0;
     const histogram = createHistogram();
-    while (elapsedTime < ms) {
+
+    const targetTimeInNs = BigInt(ms * NANOSECONDS_IN_MILLISECONDS);
+
+    let elapsedTime = 0n;
+    while (elapsedTime < targetTimeInNs) {
+        const start = process.hrtime.bigint();
         fn(...args);
-        histogram.recordDelta();
-        elapsedTime = performance.now() - start;
+        const deltaTime = process.hrtime.bigint() - start;
+
+        histogram.record(deltaTime);
+        elapsedTime += deltaTime;
     }
+
+    // To milliseconds, 3 decimal
+    const totalTime = Number(elapsedTime / BigInt(1000)) / 1000;
 
     return {
         iterations: histogram.count,
-        ops: histogram.count / elapsedTime * 1000,
-        totalTime: elapsedTime,
+        ops: histogram.count / totalTime * 1000,
+        totalTime,
         histogram: {
             max: histogram.max / NANOSECONDS_IN_MILLISECONDS,
             min: histogram.min / NANOSECONDS_IN_MILLISECONDS,

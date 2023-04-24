@@ -8,24 +8,38 @@ declare module 'perf_hooks' {
 
 const NANOSECONDS_IN_MILLISECONDS = 1_000_000;
 
+async function warmup(fn: () => unknown) {
+    for (let i = 0; i < 100; ++i) {
+        await fn();
+    }
+}
 
-function meassureExecutionTime(ms: number, fn: (...args: unknown[]) => unknown, args: unknown[] = []): PerfResult {
+async function meassureExecutionTime(ms: number, asyncFn: boolean, fn: () => unknown): Promise<PerfResult> {
     // "Prime"
-    fn(...args);
-    fn(...args);
-    fn(...args);
+    await warmup(fn);
     const histogram = createHistogram();
 
     const targetTimeInNs = BigInt(ms * NANOSECONDS_IN_MILLISECONDS);
 
     let elapsedTime = 0n;
-    while (elapsedTime < targetTimeInNs) {
-        const start = process.hrtime.bigint();
-        fn(...args);
-        const deltaTime = process.hrtime.bigint() - start;
-
-        histogram.record(deltaTime);
-        elapsedTime += deltaTime;
+    if (asyncFn) {
+        while (elapsedTime < targetTimeInNs) {
+            const start = process.hrtime.bigint();
+            await fn();
+            const deltaTime = process.hrtime.bigint() - start;
+    
+            histogram.record(deltaTime);
+            elapsedTime += deltaTime;
+        }
+    } else {
+        while (elapsedTime < targetTimeInNs) {
+            const start = process.hrtime.bigint();
+            fn();
+            const deltaTime = process.hrtime.bigint() - start;
+    
+            histogram.record(deltaTime);
+            elapsedTime += deltaTime;
+        }
     }
 
     // To milliseconds, 3 decimal
@@ -63,19 +77,20 @@ type Result = {
 
 export type TestArray = Array<{
     label: string
-    fn: (...args: any[]) => void
-    args?: any[]
+    fn: () => void
 }>
 
-export function runTests(tests: TestArray, opts: Partial<{
+export async function runTests(tests: TestArray, opts: Partial<{
     print: boolean
     time: number
+    async: boolean
 }> = {}) {
     opts.time ||= 5000;
+    opts.async ||= false;
     const results: Result[] = [];
     for (const test of tests) {
         process.stdout.write(`Running '${test.label}'...\n`);
-        const perf = meassureExecutionTime(opts.time, test.fn, test.args);
+        const perf = await meassureExecutionTime(opts.time, opts.async, test.fn);
 
         const result = {
             label: test.label,

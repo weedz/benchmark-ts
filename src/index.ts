@@ -6,7 +6,8 @@ declare module 'perf_hooks' {
     }
 }
 
-const NANOSECONDS_IN_MILLISECONDS = 1_000_000;
+const NANOSECONDS_IN_MILLISECOND = 1_000_000;
+const NANOSECONDS_IN_MICROSECOND = 1_000;
 
 async function warmup(fn: () => unknown) {
     for (let i = 0; i < 100; ++i) {
@@ -19,7 +20,7 @@ async function meassureExecutionTime(ms: number, asyncFn: boolean, fn: () => unk
     await warmup(fn);
     const histogram = createHistogram();
 
-    const targetTimeInNs = BigInt(ms * NANOSECONDS_IN_MILLISECONDS);
+    const targetTimeInNs = BigInt(ms * NANOSECONDS_IN_MILLISECOND);
 
     let elapsedTime = 0n;
     if (asyncFn) {
@@ -50,10 +51,11 @@ async function meassureExecutionTime(ms: number, asyncFn: boolean, fn: () => unk
         ops: histogram.count / totalTime * 1000,
         totalTime,
         histogram: {
-            max: histogram.max / NANOSECONDS_IN_MILLISECONDS,
-            min: histogram.min / NANOSECONDS_IN_MILLISECONDS,
-            mean: histogram.mean / NANOSECONDS_IN_MILLISECONDS,
-            "99th": histogram.percentile(.99) / NANOSECONDS_IN_MILLISECONDS,
+            max: histogram.max / NANOSECONDS_IN_MICROSECOND,
+            min: histogram.min / NANOSECONDS_IN_MICROSECOND,
+            mean: histogram.mean / NANOSECONDS_IN_MICROSECOND,
+            "99th": histogram.percentile(.99) / NANOSECONDS_IN_MICROSECOND,
+            stddev: histogram.stddev / NANOSECONDS_IN_MICROSECOND,
         }
     };
 }
@@ -67,6 +69,7 @@ type PerfResult = {
         min: number
         mean: number
         "99th": number
+        stddev: number
     }
 }
 
@@ -111,10 +114,11 @@ export function printResult(result: Result) {
     process.stdout.write(`${result.label}:\n`);
     console.log("  Operations:", result.performance.iterations);
     console.log("  Total time:", result.performance.totalTime);
-    console.log("  Max (ms):", result.performance.histogram.max.toFixed(3));
-    console.log("  Min (ms):", result.performance.histogram.min.toFixed(3));
-    console.log("  Mean (ms):", result.performance.histogram.mean.toFixed(3));
+    console.log("  Max (µs):", result.performance.histogram.max.toFixed(3));
+    console.log("  Min (µs):", result.performance.histogram.min.toFixed(3));
+    console.log("  Mean (µs):", result.performance.histogram.mean.toFixed(3));
     console.log("  99th:", result.performance.histogram["99th"].toFixed(3));
+    console.log("  +/- (µs):", result.performance.histogram.stddev.toFixed(3));
     console.log("  Op/s:", result.performance.ops);
 }
 
@@ -126,7 +130,7 @@ export function printResults(results: Result[]) {
 
 export function printResultsTable(results: Result[]) {
     const resultMap = new Map<string, {
-        rate: number,
+        performance: PerfResult,
         comparisons: Record<string, number>
     }>();
 
@@ -136,8 +140,8 @@ export function printResultsTable(results: Result[]) {
             comparisons[compare.label] = result.performance.ops / compare.performance.ops;
         }
         resultMap.set(result.label, {
-            rate: result.performance.ops,
-            comparisons
+            performance: result.performance,
+            comparisons,
         });
     }
 
@@ -145,7 +149,9 @@ export function printResultsTable(results: Result[]) {
     
     for (const [label, result] of resultMap.entries()) {
         const row: any = {
-            "Op/s": result.rate.toFixed(2)
+            "99th (µs)": result.performance.histogram["99th"].toFixed(3),
+            "+/- (µs)": result.performance.histogram.stddev.toFixed(3),
+            "Op/s": result.performance.ops.toFixed(2),
         };
         // process.stdout.write(`${label} (${result.rate.toFixed(2)}/s):\n`);
         for (const [compareLabel, compareResult] of Object.entries(result.comparisons)) {

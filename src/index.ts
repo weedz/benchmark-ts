@@ -1,6 +1,8 @@
-import { createHistogram } from "perf_hooks";
+import EventEmitter from "node:events";
+import { createHistogram } from "node:perf_hooks";
 
-declare module 'perf_hooks' {
+declare module "node:perf_hooks" {
+    // Add missing type declaration for `Histogram.count`
     interface Histogram {
         count: number
     }
@@ -15,7 +17,7 @@ async function warmup(fn: () => unknown) {
     }
 }
 
-async function meassureExecutionTime(ms: number, asyncFn: boolean, fn: () => unknown): Promise<PerfResult> {
+async function meassureExecutionTime(ms: number, fn: () => unknown): Promise<PerfResult> {
     // "Prime"
     await warmup(fn);
     const histogram = createHistogram();
@@ -23,24 +25,13 @@ async function meassureExecutionTime(ms: number, asyncFn: boolean, fn: () => unk
     const targetTimeInNs = BigInt(ms * NANOSECONDS_IN_MILLISECOND);
 
     let elapsedTime = 0n;
-    if (asyncFn) {
-        while (elapsedTime < targetTimeInNs) {
-            const start = process.hrtime.bigint();
-            await fn();
-            const deltaTime = process.hrtime.bigint() - start;
-    
-            histogram.record(deltaTime);
-            elapsedTime += deltaTime;
-        }
-    } else {
-        while (elapsedTime < targetTimeInNs) {
-            const start = process.hrtime.bigint();
-            fn();
-            const deltaTime = process.hrtime.bigint() - start;
-    
-            histogram.record(deltaTime);
-            elapsedTime += deltaTime;
-        }
+    while (elapsedTime < targetTimeInNs) {
+        const start = process.hrtime.bigint();
+        await fn();
+        const deltaTime = process.hrtime.bigint() - start;
+
+        histogram.record(deltaTime);
+        elapsedTime += deltaTime;
     }
 
     // To milliseconds, 3 decimal
@@ -78,94 +69,98 @@ type Result = {
     performance: PerfResult
 }
 
-export type TestArray = Array<{
+interface Task {
     label: string
     fn: () => void
-}>
+}
 
-export async function runTests(tests: TestArray, opts: Partial<{
-    print: boolean
-    time: number
-    async: boolean
-}> = {}) {
-    opts.time ||= 5000;
-    opts.async ||= false;
-    const results: Result[] = [];
-    for (const test of tests) {
-        process.stdout.write(`Running '${test.label}'...\n`);
-        const perf = await meassureExecutionTime(opts.time, opts.async, test.fn);
+interface BenchmarkEvents {
+    "task-start": (task: Task) => void;
+    "task-done": (task: Task, result: Result) => void;
+    "done": (results: Result[]) => void;
+}
 
-        const result = {
-            label: test.label,
-            performance: perf
-        };
+export declare interface Benchmark {
+    on<T extends keyof BenchmarkEvents>(event: T, listener: BenchmarkEvents[T]): this;
+    emit<T extends keyof BenchmarkEvents>(event: T, ...args: Parameters<BenchmarkEvents[T]>): boolean;
+}
 
-        if (opts.print) {
-            printResult(result);
-            process.stdout.write("\n");
+export class Benchmark extends EventEmitter {
+    private results: Result[] = [];
+    private tasks: Task[];
+
+    private timePerTest: number;
+
+    constructor(tasks: Task[] = [], opts: Partial<{
+        time: number
+    }> = {}) {
+        super();
+        this.tasks = tasks;
+        this.timePerTest = opts.time || 5000;
+    }
+
+    add(label: Task["label"], fn: Task["fn"]) {
+        this.tasks.push({ label, fn });
+        return this;
+    }
+
+    async run() {
+        for (const task of this.tasks) {
+            this.emit("task-start", task);
+
+            const perf = await meassureExecutionTime(this.timePerTest, task.fn);
+
+            const result: Result = {
+                label: task.label,
+                performance: perf
+            };
+
+            this.emit("task-done", task, result);
+
+            this.results.push(result);
         }
-    
-        results.push(result);
-    }
-    return results.sort( (a,b) => a.performance.ops > b.performance.ops ? -1 : 0);
-}
+        this.results.sort((a, b) => a.performance.ops > b.performance.ops ? -1 : 0);
 
-export function printResult(result: Result) {
-    process.stdout.write(`${result.label}:\n`);
-    console.log("  Operations:", result.performance.iterations);
-    console.log("  Total time:", result.performance.totalTime);
-    console.log("  Max (µs):", result.performance.histogram.max.toFixed(3));
-    console.log("  Min (µs):", result.performance.histogram.min.toFixed(3));
-    console.log("  Mean (µs):", result.performance.histogram.mean.toFixed(3));
-    console.log("  99th:", result.performance.histogram["99th"].toFixed(3));
-    console.log("  +/- (µs):", result.performance.histogram.stddev.toFixed(3));
-    console.log("  Op/s:", result.performance.ops);
-}
+        this.emit("done", this.results);
 
-export function printResults(results: Result[]) {
-    for (const result of results) {
-        printResult(result);
-    }
-}
-
-export function printResultsTable(results: Result[]) {
-    const resultMap = new Map<string, {
-        performance: PerfResult,
-        comparisons: Record<string, number>
-    }>();
-
-    for (const result of results) {
-        const comparisons: Record<string, number> = {};
-        for (const compare of results) {
-            comparisons[compare.label] = result.performance.ops / compare.performance.ops;
-        }
-        resultMap.set(result.label, {
-            performance: result.performance,
-            comparisons,
-        });
+        return this;
     }
 
-    const table: Record<string, {}> = {};
-    
-    for (const [label, result] of resultMap.entries()) {
-        const row: any = {
-            "99th (µs)": result.performance.histogram["99th"].toFixed(3),
-            "+/- (µs)": result.performance.histogram.stddev.toFixed(3),
-            "Op/s": result.performance.ops.toFixed(2),
-        };
-        // process.stdout.write(`${label} (${result.rate.toFixed(2)}/s):\n`);
-        for (const [compareLabel, compareResult] of Object.entries(result.comparisons)) {
-            if (compareLabel === label) {
-                row[compareLabel] = "-";
-                continue;
+    table() {
+        const resultMap = new Map<string, {
+            performance: PerfResult,
+            comparisons: Record<string, number>
+        }>();
+
+        for (const result of this.results) {
+            const comparisons: Record<string, number> = {};
+            for (const compare of this.results) {
+                comparisons[compare.label] = result.performance.ops / compare.performance.ops;
             }
-            const percentage = (compareResult - 1) * 100;
-            // process.stdout.write(`  ${compareLabel}: ${percentage.toFixed(2)}% (${compareResult.toFixed(2)}x)\n`);
-
-            row[compareLabel] = compareResult.toFixed(2)
+            resultMap.set(result.label, {
+                performance: result.performance,
+                comparisons,
+            });
         }
-        table[label] = row;
+
+        const table: Record<string, {}> = {};
+
+        for (const [label, result] of resultMap.entries()) {
+            const row: any = {
+                "99th (µs)": result.performance.histogram["99th"].toFixed(3),
+                "+/- (µs)": result.performance.histogram.stddev.toFixed(3),
+                "Op/s": result.performance.ops.toFixed(2),
+            };
+            for (const [compareLabel, compareResult] of Object.entries(result.comparisons)) {
+                if (compareLabel === label) {
+                    row[compareLabel] = "-";
+                    continue;
+                }
+
+                row[compareLabel] = compareResult.toFixed(2)
+            }
+            table[label] = row;
+        }
+        return table;
     }
-    console.table(table);
-    return table;
 }

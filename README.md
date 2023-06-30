@@ -1,9 +1,18 @@
 # benchmark-ts
 
+- [benchmark-ts](#benchmark-ts)
+  - [Example:](#example)
+  - [Output](#output)
+  - [Events](#events)
+    - [`task-start`](#task-start)
+    - [`task-done`](#task-done)
+    - [`done`](#done)
+
+
 ## Example:
 
 ```typescript
-import { runTests, printResults, printResultsTable, TestArray } from "@weedzcokie/benchmark";
+import { Benchmark } from "@weedzcokie/benchmark";
 
 function cellNumberToName(x: number) {
     let name = "";
@@ -43,7 +52,7 @@ function objectAssignment() {
     return object;
 }
 
-const tests: TestArray = [
+const bench = new Benchmark([
     {
         fn: mapAssignment,
         label: "Map assignment"
@@ -56,11 +65,13 @@ const tests: TestArray = [
         fn: objectAssignment,
         label: "Object assignment"
     },
-];
+]);
+// Or add each task with `bench.add()`
 
-const results = runTests(tests);
-printResults(results);
-printResultsTable(results);
+await bench.run();
+
+console.table(bench.table());
+
 ```
 
 Output:
@@ -73,3 +84,35 @@ Output:
 │ Object assignment │ '116.68' │     '0.68'     │     '0.75'     │        '-'        │
 └───────────────────┴──────────┴────────────────┴────────────────┴───────────────────┘
 ```
+
+## Output
+
+We do not print anything. You can listen on the `task-start` event to know when a task is starting and
+`task-done` to know then a task is done.
+
+Example:
+```typescript
+bench.on("task-start", task => {
+    console.log(`Running task '${task.label}'...`);
+});
+
+bench.on("task-done", (task, result) => {
+    console.log("Task done:", task.label, result);
+});
+```
+
+## Events
+
+Typescript everywhere so probably easiest to look at type definitions.
+
+### `task-start`
+
+Fires when a task starts running.
+
+### `task-done`
+
+Fires when a task is done running.
+
+### `done`
+
+Fires when all tasks are done running.

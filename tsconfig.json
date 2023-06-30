@@ -1,17 +1,15 @@
 {
     "include": ["./src"],
     "compilerOptions": {
+        "removeComments": true,
         "outDir": "./dist",
         "target": "ESNext",
         "module": "NodeNext",
-        "moduleResolution": "node16",
+        "moduleResolution": "NodeNext",
         "esModuleInterop": true,
         "forceConsistentCasingInFileNames": true,
         "strict": true,
         "declaration": true,
         "skipLibCheck": true
-    },
-    "ts-node": {
-        "swc": true
     }
 }

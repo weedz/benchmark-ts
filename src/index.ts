@@ -121,6 +121,9 @@ export class Benchmark extends EventEmitter {
     }
 
     async run() {
+        // 'jiting the jit'. Inconsistent results for really fast tasks without this.
+        await meassureExecutionTime(1000, this.asyncTask, () => {});
+
         for (const task of this.tasks) {
             this.emit("task-start", task);
 

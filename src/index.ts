@@ -17,7 +17,7 @@ async function warmup(fn: () => unknown) {
     }
 }
 
-async function meassureExecutionTime(ms: number, fn: () => unknown): Promise<PerfResult> {
+async function meassureExecutionTime(ms: number, asyncFn: boolean, fn: () => unknown): Promise<PerfResult> {
     // "Prime"
     await warmup(fn);
     const histogram = createHistogram();
@@ -25,13 +25,25 @@ async function meassureExecutionTime(ms: number, fn: () => unknown): Promise<Per
     const targetTimeInNs = BigInt(ms * NANOSECONDS_IN_MILLISECOND);
 
     let elapsedTime = 0n;
-    while (elapsedTime < targetTimeInNs) {
-        const start = process.hrtime.bigint();
-        await fn();
-        const deltaTime = process.hrtime.bigint() - start;
 
-        histogram.record(deltaTime);
-        elapsedTime += deltaTime;
+    if (asyncFn) {
+        while (elapsedTime < targetTimeInNs) {
+            const start = process.hrtime.bigint();
+            await fn();
+            const deltaTime = process.hrtime.bigint() - start;
+    
+            histogram.record(deltaTime);
+            elapsedTime += deltaTime;
+        }
+    } else {
+        while (elapsedTime < targetTimeInNs) {
+            const start = process.hrtime.bigint();
+            fn();
+            const deltaTime = process.hrtime.bigint() - start;
+    
+            histogram.record(deltaTime);
+            elapsedTime += deltaTime;
+        }
     }
 
     // To milliseconds, 3 decimal
@@ -90,13 +102,17 @@ export class Benchmark extends EventEmitter {
     private tasks: Task[];
 
     private timePerTest: number;
+    private asyncTask: boolean;
 
     constructor(tasks: Task[] = [], opts: Partial<{
-        time: number
+        time: number;
+        /** Really noticable performance impact if using async/await */
+        async: boolean;
     }> = {}) {
         super();
         this.tasks = tasks;
         this.timePerTest = opts.time || 5000;
+        this.asyncTask = opts.async || false;
     }
 
     add(label: Task["label"], fn: Task["fn"]) {
@@ -108,7 +124,7 @@ export class Benchmark extends EventEmitter {
         for (const task of this.tasks) {
             this.emit("task-start", task);
 
-            const perf = await meassureExecutionTime(this.timePerTest, task.fn);
+            const perf = await meassureExecutionTime(this.timePerTest, this.asyncTask, task.fn);
 
             const result: Result = {
                 label: task.label,

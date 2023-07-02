@@ -1,9 +1,11 @@
 {
   "name": "@weedzcokie/benchmark",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "",
   "type": "module",
-  "main": "dist/index.js",
+  "exports": {
+    "import": "./dist/index.js"
+  },
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",

@@ -81,7 +81,7 @@ type Result = {
     performance: PerfResult
 }
 
-interface Task {
+export interface Task {
     label: string
     fn: () => void
 }

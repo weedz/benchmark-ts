@@ -1,6 +1,6 @@
 {
   "name": "@weedzcokie/benchmark",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "",
   "type": "module",
   "exports": {
@@ -15,11 +15,13 @@
   "files": [
     "./dist"
   ],
-  "keywords": ["benchmark"],
+  "keywords": [
+    "benchmark"
+  ],
   "author": "Linus Björklund",
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^20.3.3",
+    "@types/node": "^20.4.2",
     "typescript": "^5.1.6"
   },
   "repository": {

@@ -178,3 +178,15 @@ export class Benchmark extends EventEmitter {
         return table;
     }
 }
+
+export async function runBenchmark(tasks: TaskObject[]) {
+    const bench = new Benchmark();
+    for (const task of tasks) {
+        bench.add(task.label, task.fn);
+    }
+    bench.on("task-start", (task) => {
+        console.log(`Benchmarking '${task.label}'...`);
+    });
+    await bench.run();
+    console.table(bench.table());
+}

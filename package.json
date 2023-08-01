@@ -1,7 +1,7 @@
 {
   "name": "@weedzcokie/benchmark",
-  "version": "0.2.6",
-  "description": "",
+  "version": "0.3.0",
+  "description": "Tiny benchmarking utility",
   "type": "module",
   "exports": {
     "types": "./dist/index.d.ts",
@@ -21,7 +21,7 @@
   "author": "Linus Björklund",
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^20.4.2",
+    "@types/node": "^20.4.5",
     "typescript": "^5.1.6"
   },
   "repository": {

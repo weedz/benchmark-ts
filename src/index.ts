@@ -11,57 +11,50 @@ declare module "node:perf_hooks" {
 const NANOSECONDS_IN_MILLISECOND = 1_000_000;
 const NANOSECONDS_IN_MICROSECOND = 1_000;
 
-async function warmup(fn: () => unknown) {
-    for (let i = 0; i < 100; ++i) {
-        await fn();
+class Task {
+    private fn: () => unknown;
+
+    label: string;
+
+    constructor(label: string, fn: () => unknown) {
+        this.label = label;
+        this.fn = fn;
     }
-}
 
-async function meassureExecutionTime(ms: number, asyncFn: boolean, fn: () => unknown): Promise<PerfResult> {
-    // "Prime"
-    await warmup(fn);
-    const histogram = createHistogram();
-
-    const targetTimeInNs = BigInt(ms * NANOSECONDS_IN_MILLISECOND);
-
-    let elapsedTime = 0n;
-
-    if (asyncFn) {
+    async meassureExecutionTime(ms: number, asyncFn: boolean): Promise<PerfResult> {
+        const histogram = createHistogram();
+    
+        const targetTimeInNs = BigInt(ms * NANOSECONDS_IN_MILLISECOND);
+    
+        let elapsedTime = 0n;
+    
         while (elapsedTime < targetTimeInNs) {
             const start = process.hrtime.bigint();
-            await fn();
+            asyncFn ? await this.fn.call(this) : this.fn.call(this);
             const deltaTime = process.hrtime.bigint() - start;
     
             histogram.record(deltaTime);
             elapsedTime += deltaTime;
         }
-    } else {
-        while (elapsedTime < targetTimeInNs) {
-            const start = process.hrtime.bigint();
-            fn();
-            const deltaTime = process.hrtime.bigint() - start;
     
-            histogram.record(deltaTime);
-            elapsedTime += deltaTime;
-        }
+        // To milliseconds, 3 decimal
+        const totalTime = Number(elapsedTime / BigInt(1000)) / 1000;
+    
+        return {
+            iterations: histogram.count,
+            ops: histogram.count / totalTime * 1000,
+            totalTime,
+            histogram: {
+                max: histogram.max / NANOSECONDS_IN_MICROSECOND,
+                min: histogram.min / NANOSECONDS_IN_MICROSECOND,
+                mean: histogram.mean / NANOSECONDS_IN_MICROSECOND,
+                "99th": histogram.percentile(.99) / NANOSECONDS_IN_MICROSECOND,
+                stddev: histogram.stddev / NANOSECONDS_IN_MICROSECOND,
+            }
+        };
     }
-
-    // To milliseconds, 3 decimal
-    const totalTime = Number(elapsedTime / BigInt(1000)) / 1000;
-
-    return {
-        iterations: histogram.count,
-        ops: histogram.count / totalTime * 1000,
-        totalTime,
-        histogram: {
-            max: histogram.max / NANOSECONDS_IN_MICROSECOND,
-            min: histogram.min / NANOSECONDS_IN_MICROSECOND,
-            mean: histogram.mean / NANOSECONDS_IN_MICROSECOND,
-            "99th": histogram.percentile(.99) / NANOSECONDS_IN_MICROSECOND,
-            stddev: histogram.stddev / NANOSECONDS_IN_MICROSECOND,
-        }
-    };
 }
+
 
 type PerfResult = {
     totalTime: number
@@ -81,11 +74,6 @@ type Result = {
     performance: PerfResult
 }
 
-export interface Task {
-    label: string
-    fn: () => void
-}
-
 interface BenchmarkEvents {
     "task-start": (task: Task) => void;
     "task-done": (task: Task, result: Result) => void;
@@ -97,6 +85,11 @@ export declare interface Benchmark {
     emit<T extends keyof BenchmarkEvents>(event: T, ...args: Parameters<BenchmarkEvents[T]>): boolean;
 }
 
+export interface TaskObject {
+    label: Task["label"];
+    fn: Task["fn"];
+}
+
 export class Benchmark extends EventEmitter {
     private results: Result[] = [];
     private tasks: Task[];
@@ -104,30 +97,32 @@ export class Benchmark extends EventEmitter {
     private timePerTest: number;
     private asyncTask: boolean;
 
-    constructor(tasks: Task[] = [], opts: Partial<{
+    constructor(opts: Partial<{
         time: number;
         /** Really noticable performance impact if using async/await */
         async: boolean;
-    }> = {}) {
+    }> = {}, tasks: TaskObject[] = []) {
         super();
-        this.tasks = tasks;
+        this.tasks = tasks.map(task => new Task(task.label, task.fn));
         this.timePerTest = opts.time || 5000;
         this.asyncTask = opts.async || false;
     }
 
-    add(label: Task["label"], fn: Task["fn"]) {
-        this.tasks.push({ label, fn });
+    add(label: TaskObject["label"], fn: TaskObject["fn"]) {
+        this.tasks.push(new Task(label, fn));
         return this;
     }
 
     async run() {
-        // 'jiting the jit'. Inconsistent results for really fast tasks without this.
-        await meassureExecutionTime(1000, this.asyncTask, () => {});
+        // warmup
+        for (const task of this.tasks) {
+            await task.meassureExecutionTime(500, this.asyncTask);
+        }
 
         for (const task of this.tasks) {
             this.emit("task-start", task);
 
-            const perf = await meassureExecutionTime(this.timePerTest, this.asyncTask, task.fn);
+            const perf = await task.meassureExecutionTime(this.timePerTest, this.asyncTask);
 
             const result: Result = {
                 label: task.label,

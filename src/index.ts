@@ -12,13 +12,15 @@ const NANOSECONDS_IN_MILLISECOND = 1_000_000;
 const NANOSECONDS_IN_MICROSECOND = 1_000;
 
 class Task {
-    private fn: () => unknown;
+    private fn: TaskObject["fn"];
 
-    label: string;
+    label: TaskObject["label"];
+    setup?: () => any;
 
-    constructor(label: string, fn: () => unknown) {
+    constructor(label: TaskObject["label"], fn: TaskObject["fn"], opts: TaskOpts) {
         this.label = label;
         this.fn = fn;
+        this.setup = opts.setup;
     }
 
     async meassureExecutionTime(ms: number, asyncFn: boolean): Promise<PerfResult> {
@@ -29,8 +31,9 @@ class Task {
         let elapsedTime = 0n;
     
         while (elapsedTime < targetTimeInNs) {
+            const setupData = this.setup?.();
             const start = process.hrtime.bigint();
-            asyncFn ? await this.fn.call(this) : this.fn.call(this);
+            asyncFn ? await this.fn.call(this, setupData) : this.fn.call(this, setupData);
             const deltaTime = process.hrtime.bigint() - start;
     
             histogram.record(deltaTime);
@@ -86,8 +89,14 @@ export declare interface Benchmark {
 }
 
 export interface TaskObject {
-    label: Task["label"];
-    fn: Task["fn"];
+    label: string;
+    fn: (...args: any[]) => unknown;
+    opts?: TaskOpts;
+}
+
+interface TaskOpts {
+    /** This is called before every task execution. The return value is passed to `Task.fn` */
+    setup?: () => any;
 }
 
 export class Benchmark extends EventEmitter {
@@ -103,13 +112,13 @@ export class Benchmark extends EventEmitter {
         async: boolean;
     }> = {}, tasks: TaskObject[] = []) {
         super();
-        this.tasks = tasks.map(task => new Task(task.label, task.fn));
+        this.tasks = tasks.map(task => new Task(task.label, task.fn, task.opts || {}));
         this.timePerTest = opts.time || 5000;
         this.asyncTask = opts.async || false;
     }
 
-    add(label: TaskObject["label"], fn: TaskObject["fn"]) {
-        this.tasks.push(new Task(label, fn));
+    add(label: TaskObject["label"], fn: TaskObject["fn"], opts: TaskOpts = {}) {
+        this.tasks.push(new Task(label, fn, opts));
         return this;
     }
 

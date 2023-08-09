@@ -12,6 +12,9 @@ const NANOSECONDS_IN_MILLISECOND = 1_000_000;
 const NANOSECONDS_IN_MICROSECOND = 1_000;
 
 class Task {
+    private histogram = createHistogram();
+    private elapsedTime = 0n;
+
     private fn: TaskObject["fn"];
 
     label: TaskObject["label"];
@@ -23,36 +26,41 @@ class Task {
         this.setup = opts.setup;
     }
 
-    async meassureExecutionTime(ms: number, asyncFn: boolean): Promise<PerfResult> {
-        const histogram = createHistogram();
-    
+    async meassureExecutionTime(asyncFn: boolean) {
+        const setupData = this.setup?.();
+        const start = process.hrtime.bigint();
+        asyncFn ? await this.fn.call(this, setupData) : this.fn.call(this, setupData);
+        const deltaTime = process.hrtime.bigint() - start;
+
+        this.histogram.record(deltaTime);
+        this.elapsedTime += deltaTime;
+
+        return this.elapsedTime;
+    }
+    async run(ms: number, asyncFn: boolean) {
         const targetTimeInNs = BigInt(ms * NANOSECONDS_IN_MILLISECOND);
     
-        let elapsedTime = 0n;
-    
-        while (elapsedTime < targetTimeInNs) {
-            const setupData = this.setup?.();
-            const start = process.hrtime.bigint();
-            asyncFn ? await this.fn.call(this, setupData) : this.fn.call(this, setupData);
-            const deltaTime = process.hrtime.bigint() - start;
-    
-            histogram.record(deltaTime);
-            elapsedTime += deltaTime;
+        while (this.elapsedTime < targetTimeInNs) {
+            await this.meassureExecutionTime(asyncFn);
         }
-    
-        // To milliseconds, 3 decimal
-        const totalTime = Number(elapsedTime / BigInt(1000)) / 1000;
-    
+    }
+    reset() {
+        this.histogram.reset();
+        this.elapsedTime = 0n;
+    }
+    result(): PerfResult {
+        // To milliseconds with 3 decimal places
+        const totalTime = Number(this.elapsedTime / BigInt(1000)) / 1000;
         return {
-            iterations: histogram.count,
-            ops: histogram.count / totalTime * 1000,
+            iterations: this.histogram.count,
+            ops: this.histogram.count / totalTime * 1000,
             totalTime,
             histogram: {
-                max: histogram.max / NANOSECONDS_IN_MICROSECOND,
-                min: histogram.min / NANOSECONDS_IN_MICROSECOND,
-                mean: histogram.mean / NANOSECONDS_IN_MICROSECOND,
-                "99th": histogram.percentile(.99) / NANOSECONDS_IN_MICROSECOND,
-                stddev: histogram.stddev / NANOSECONDS_IN_MICROSECOND,
+                max: this.histogram.max / NANOSECONDS_IN_MICROSECOND,
+                min: this.histogram.min / NANOSECONDS_IN_MICROSECOND,
+                mean: this.histogram.mean / NANOSECONDS_IN_MICROSECOND,
+                "99th": this.histogram.percentile(.99) / NANOSECONDS_IN_MICROSECOND,
+                stddev: this.histogram.stddev / NANOSECONDS_IN_MICROSECOND,
             }
         };
     }
@@ -122,27 +130,49 @@ export class Benchmark extends EventEmitter {
         return this;
     }
 
+    async runRoundRobin() {
+        const targetTimeInNs = BigInt(this.timePerTest * NANOSECONDS_IN_MILLISECOND);
+
+        const tasksToRun = new Set(this.tasks);
+        while (tasksToRun.size) {
+            for (const task of tasksToRun) {
+                if (await task.meassureExecutionTime(this.asyncTask) >= targetTimeInNs) {
+                    tasksToRun.delete(task);
+
+                    const result: Result = {
+                        label: task.label,
+                        performance: task.result(),
+                    };
+                    this.emit("task-done", task, result);
+                    this.results.push(result);
+                }
+            }
+        }
+
+        this.emit("done", this.results);
+    }
+
     async run() {
         // warmup
         for (const task of this.tasks) {
-            await task.meassureExecutionTime(500, this.asyncTask);
+            await task.run(500, this.asyncTask);
+            task.reset();
         }
 
         for (const task of this.tasks) {
             this.emit("task-start", task);
 
-            const perf = await task.meassureExecutionTime(this.timePerTest, this.asyncTask);
+            await task.run(this.timePerTest, this.asyncTask);
 
             const result: Result = {
                 label: task.label,
-                performance: perf
+                performance: task.result(),
             };
 
             this.emit("task-done", task, result);
 
             this.results.push(result);
         }
-        this.results.sort((a, b) => a.performance.ops > b.performance.ops ? -1 : 0);
 
         this.emit("done", this.results);
 
@@ -154,6 +184,8 @@ export class Benchmark extends EventEmitter {
             performance: PerfResult,
             comparisons: Record<string, number>
         }>();
+
+        this.results.sort((a, b) => a.performance.ops > b.performance.ops ? -1 : 0);
 
         for (const result of this.results) {
             const comparisons: Record<string, number> = {};

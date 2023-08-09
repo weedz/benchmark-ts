@@ -1,6 +1,6 @@
 {
   "name": "@weedzcokie/benchmark",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Tiny benchmarking utility",
   "type": "module",
   "exports": {

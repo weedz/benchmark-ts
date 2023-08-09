@@ -11,14 +11,20 @@ declare module "node:perf_hooks" {
 const NANOSECONDS_IN_MILLISECOND = 1_000_000;
 const NANOSECONDS_IN_MICROSECOND = 1_000;
 
+export const msToNs = (ms: number) => BigInt(ms * NANOSECONDS_IN_MILLISECOND);
+export const nsToMs = (ns: bigint) => Math.round(Number(ns / BigInt(NANOSECONDS_IN_MICROSECOND))) / 1000;
+
 class Task {
     private histogram = createHistogram();
-    private elapsedTime = 0n;
+    readonly elapsedTime = {
+        task: 0n,
+        setup: 0n,
+    };
 
     private fn: TaskObject["fn"];
 
-    label: TaskObject["label"];
-    setup?: () => any;
+    readonly label: TaskObject["label"];
+    private setup?: () => any;
 
     constructor(label: TaskObject["label"], fn: TaskObject["fn"], opts: TaskObject["opts"] = {}) {
         this.label = label;
@@ -27,30 +33,32 @@ class Task {
     }
 
     async meassureExecutionTime(asyncFn: boolean) {
+        let start = process.hrtime.bigint();
         const setupData = this.setup?.();
-        const start = process.hrtime.bigint();
+        this.elapsedTime.setup += process.hrtime.bigint() - start;
+
+        start = process.hrtime.bigint();
         asyncFn ? await this.fn.call(this, setupData) : this.fn.call(this, setupData);
         const deltaTime = process.hrtime.bigint() - start;
 
         this.histogram.record(deltaTime);
-        this.elapsedTime += deltaTime;
-
-        return this.elapsedTime;
+        this.elapsedTime.task += deltaTime;
     }
-    async run(ms: number, asyncFn: boolean) {
-        const targetTimeInNs = BigInt(ms * NANOSECONDS_IN_MILLISECOND);
+    async runFor(ms: number, asyncFn: boolean) {
+        const targetTimeInNs = msToNs(ms);
     
-        while (this.elapsedTime < targetTimeInNs) {
+        while (this.elapsedTime.task < targetTimeInNs) {
             await this.meassureExecutionTime(asyncFn);
         }
     }
     reset() {
         this.histogram.reset();
-        this.elapsedTime = 0n;
+        this.elapsedTime.task = 0n;
+        this.elapsedTime.setup = 0n;
     }
     result(): PerfResult {
         // To milliseconds with 3 decimal places
-        const totalTime = Number(this.elapsedTime / BigInt(1000)) / 1000;
+        const totalTime = Number(this.elapsedTime.task / BigInt(1000)) / 1000;
         return {
             iterations: this.histogram.count,
             ops: this.histogram.count / totalTime * 1000,
@@ -87,13 +95,15 @@ type Result = {
 
 interface BenchmarkEvents {
     "task-start": (task: Task) => void;
-    "task-done": (task: Task, result: Result) => void;
-    "done": (results: Result[]) => void;
+    "task-done": (task: Task) => void;
+    "done": () => void;
+    "progress": (tasks: Task[]) => void;
 }
 
 export declare interface Benchmark {
     on<T extends keyof BenchmarkEvents>(event: T, listener: BenchmarkEvents[T]): this;
     emit<T extends keyof BenchmarkEvents>(event: T, ...args: Parameters<BenchmarkEvents[T]>): boolean;
+    listenerCount<T extends keyof BenchmarkEvents>(event: T): number;
 }
 
 export interface TaskObject<TInitData = any> {
@@ -108,10 +118,9 @@ interface TaskOpts<TInitData> {
 }
 
 export class Benchmark extends EventEmitter {
-    private results: Result[] = [];
     private tasks: Task[] = [];
 
-    private timePerTest: number;
+    readonly timePerTest: number;
     private asyncTask: boolean;
 
     constructor(opts: Partial<{
@@ -129,52 +138,61 @@ export class Benchmark extends EventEmitter {
         this.tasks.push(new Task(label, fn, opts));
         return this;
     }
+    size() {
+        return this.tasks.length;
+    }
+
+    reset() {
+        for (const task of this.tasks) {
+            task.reset();
+        }
+    }
 
     async runRoundRobin() {
-        const targetTimeInNs = BigInt(this.timePerTest * NANOSECONDS_IN_MILLISECOND);
+        const targetTimeInNs = msToNs(this.timePerTest);
 
         const tasksToRun = new Set(this.tasks);
+
+        const reportInterval = msToNs(Math.max(500, Math.min(1000, this.timePerTest / 10)));
+        let lastReportAt = process.hrtime.bigint();
+
         while (tasksToRun.size) {
             for (const task of tasksToRun) {
-                if (await task.meassureExecutionTime(this.asyncTask) >= targetTimeInNs) {
+                await task.meassureExecutionTime(this.asyncTask);
+                // Only check/report progress if atleast one listener
+                if (this.listenerCount("progress")) {
+                    if (process.hrtime.bigint() - reportInterval >= lastReportAt) {
+                        lastReportAt = process.hrtime.bigint();
+                        this.emit("progress", this.tasks);
+                    }
+                }
+                if (task.elapsedTime.task >= targetTimeInNs) {
                     tasksToRun.delete(task);
 
-                    const result: Result = {
-                        label: task.label,
-                        performance: task.result(),
-                    };
-                    this.emit("task-done", task, result);
-                    this.results.push(result);
+                    this.emit("task-done", task);
                 }
             }
         }
 
-        this.emit("done", this.results);
+        this.emit("done");
     }
 
     async run() {
         // warmup
         for (const task of this.tasks) {
-            await task.run(500, this.asyncTask);
+            await task.runFor(500, this.asyncTask);
             task.reset();
         }
 
         for (const task of this.tasks) {
             this.emit("task-start", task);
 
-            await task.run(this.timePerTest, this.asyncTask);
+            await task.runFor(this.timePerTest, this.asyncTask);
 
-            const result: Result = {
-                label: task.label,
-                performance: task.result(),
-            };
-
-            this.emit("task-done", task, result);
-
-            this.results.push(result);
+            this.emit("task-done", task);
         }
 
-        this.emit("done", this.results);
+        this.emit("done");
 
         return this;
     }
@@ -185,11 +203,16 @@ export class Benchmark extends EventEmitter {
             comparisons: Record<string, number>
         }>();
 
-        this.results.sort((a, b) => a.performance.ops > b.performance.ops ? -1 : 0);
+        const results = this.tasks.map(
+            task => ({
+                performance: task.result(),
+                label: task.label,
+            })
+        ).sort((a, b) => a.performance.ops > b.performance.ops ? -1 : 0);
 
-        for (const result of this.results) {
+        for (const result of results) {
             const comparisons: Record<string, number> = {};
-            for (const compare of this.results) {
+            for (const compare of results) {
                 comparisons[compare.label] = result.performance.ops / compare.performance.ops;
             }
             resultMap.set(result.label, {
@@ -201,7 +224,7 @@ export class Benchmark extends EventEmitter {
         const table: Record<string, {}> = {};
 
         for (const [label, result] of resultMap.entries()) {
-            const row: any = {
+            const row: Record<string, string> = {
                 "99th (µs)": result.performance.histogram["99th"].toFixed(3),
                 "+/- (µs)": result.performance.histogram.stddev.toFixed(3),
                 "Op/s": result.performance.ops.toFixed(2),
@@ -218,16 +241,4 @@ export class Benchmark extends EventEmitter {
         }
         return table;
     }
-}
-
-export async function runBenchmark(tasks: TaskObject[]) {
-    const bench = new Benchmark();
-    for (const task of tasks) {
-        bench.add(task.label, task.fn);
-    }
-    bench.on("task-start", (task) => {
-        console.log(`Benchmarking '${task.label}'...`);
-    });
-    await bench.run();
-    console.table(bench.table());
 }

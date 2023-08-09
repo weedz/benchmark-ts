@@ -10,6 +10,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
+    "build:w": "tsc -w",
     "prepublish": "pnpm run build"
   },
   "files": [

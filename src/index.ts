@@ -101,18 +101,18 @@ interface TaskOpts<TInitData> {
 
 export class Benchmark extends EventEmitter {
     private results: Result[] = [];
-    private tasks: Task[];
+    private tasks: Task[] = [];
 
     private timePerTest: number;
     private asyncTask: boolean;
 
     constructor(opts: Partial<{
+        /** Minimum number of milliseconds to execute a task for */
         time: number;
         /** Really noticable performance impact if using async/await */
         async: boolean;
-    }> = {}, tasks: TaskObject[] = []) {
+    }> = {}) {
         super();
-        this.tasks = tasks.map(task => new Task(task.label, task.fn, task.opts || {}));
         this.timePerTest = opts.time || 5000;
         this.asyncTask = opts.async || false;
     }

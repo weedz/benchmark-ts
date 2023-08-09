@@ -52,21 +52,10 @@ function objectAssignment() {
     return object;
 }
 
-const bench = new Benchmark([
-    {
-        fn: mapAssignment,
-        label: "Map assignment"
-    },
-    {
-        fn: setAssignment,
-        label: "Set assignment"
-    },
-    {
-        fn: objectAssignment,
-        label: "Object assignment"
-    },
-]);
-// Or add each task with `bench.add()`
+const bench = new Benchmark();
+bench.add("Map assignment", mapAssignment);
+bench.add("Set assignment", setAssignment);
+bench.add("Object assignment", objectAssignment);
 
 await bench.run();
 

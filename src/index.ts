@@ -17,7 +17,7 @@ class Task {
     label: TaskObject["label"];
     setup?: () => any;
 
-    constructor(label: TaskObject["label"], fn: TaskObject["fn"], opts: TaskOpts) {
+    constructor(label: TaskObject["label"], fn: TaskObject["fn"], opts: TaskObject["opts"] = {}) {
         this.label = label;
         this.fn = fn;
         this.setup = opts.setup;
@@ -88,15 +88,15 @@ export declare interface Benchmark {
     emit<T extends keyof BenchmarkEvents>(event: T, ...args: Parameters<BenchmarkEvents[T]>): boolean;
 }
 
-export interface TaskObject {
+export interface TaskObject<TInitData = any> {
     label: string;
-    fn: (...args: any[]) => unknown;
-    opts?: TaskOpts;
+    fn: (data: TInitData) => unknown;
+    opts?: TaskOpts<TInitData>
 }
 
-interface TaskOpts {
+interface TaskOpts<TInitData> {
     /** This is called before every task execution. The return value is passed to `Task.fn` */
-    setup?: () => any;
+    setup?: () => TInitData;
 }
 
 export class Benchmark extends EventEmitter {
@@ -117,7 +117,7 @@ export class Benchmark extends EventEmitter {
         this.asyncTask = opts.async || false;
     }
 
-    add(label: TaskObject["label"], fn: TaskObject["fn"], opts: TaskOpts = {}) {
+    add<TInitData = unknown>(label: TaskObject<TInitData>["label"], fn: TaskObject<TInitData>["fn"], opts: TaskObject<TInitData>["opts"] = {}) {
         this.tasks.push(new Task(label, fn, opts));
         return this;
     }

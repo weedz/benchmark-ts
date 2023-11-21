@@ -22,8 +22,8 @@
   "author": "Linus Björklund",
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^20.4.9",
-    "typescript": "^5.1.6"
+    "@types/node": "^20.9.3",
+    "typescript": "^5.3.2"
   },
   "repository": {
     "type": "git",

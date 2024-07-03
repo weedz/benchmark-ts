@@ -1,13 +1,6 @@
 import EventEmitter from "node:events";
 import { createHistogram } from "node:perf_hooks";
 
-declare module "node:perf_hooks" {
-    // Add missing type declaration for `Histogram.count`
-    interface Histogram {
-        count: number
-    }
-}
-
 const NANOSECONDS_IN_MILLISECOND = 1_000_000;
 const NANOSECONDS_IN_MICROSECOND = 1_000;
 
@@ -46,7 +39,7 @@ class Task {
     }
     async runFor(ms: number, asyncFn: boolean) {
         const targetTimeInNs = msToNs(ms);
-    
+
         while (this.elapsedTime.task < targetTimeInNs) {
             await this.meassureExecutionTime(asyncFn);
         }
@@ -88,22 +81,11 @@ type PerfResult = {
     }
 }
 
-type Result = {
-    label: string
-    performance: PerfResult
-}
-
 interface BenchmarkEvents {
     "task-start": (task: Task) => void;
     "task-done": (task: Task) => void;
     "done": () => void;
     "progress": (tasks: Task[]) => void;
-}
-
-export declare interface Benchmark {
-    on<T extends keyof BenchmarkEvents>(event: T, listener: BenchmarkEvents[T]): this;
-    emit<T extends keyof BenchmarkEvents>(event: T, ...args: Parameters<BenchmarkEvents[T]>): boolean;
-    listenerCount<T extends keyof BenchmarkEvents>(event: T): number;
 }
 
 export interface TaskObject<TInitData = any> {
@@ -115,6 +97,14 @@ export interface TaskObject<TInitData = any> {
 interface TaskOpts<TInitData> {
     /** This is called before every task execution. The return value is passed to `Task.fn` */
     setup?: () => TInitData;
+}
+
+// NOTE: The interface is used to define the available events since `Benchmark` extends `EventEmitter`
+// oxlint-disable-next-line typescript-eslint(no-unsafe-declaration-merging)
+export declare interface Benchmark {
+    on<T extends keyof BenchmarkEvents>(event: T, listener: BenchmarkEvents[T]): this;
+    emit<T extends keyof BenchmarkEvents>(event: T, ...args: Parameters<BenchmarkEvents[T]>): boolean;
+    listenerCount<T extends keyof BenchmarkEvents>(event: T): number;
 }
 
 export class Benchmark extends EventEmitter {

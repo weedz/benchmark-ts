@@ -22,8 +22,8 @@
   "author": "Linus Björklund",
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^20.14.9",
-    "typescript": "^5.5.3"
+    "@types/node": "^24.10.4",
+    "typescript": "^5.9.3"
   },
   "repository": {
     "type": "git",
@@ -33,5 +33,5 @@
     "url": "https://github.com/weedz/benchmark-ts/issues"
   },
   "homepage": "https://github.com/weedz/benchmark-ts#readme",
-  "packageManager": "pnpm@9.5.0-beta.0+sha512.c2e60e7ed04e459591c982f2760cd8f7d1f48fe1ca4d46ccbbf8377df1eb2d077ace1e9d334b06250dddf23c03b4562858f77992b9a3bb4a93355aefd173df32"
+  "packageManager": "pnpm@10.27.0+sha512.72d699da16b1179c14ba9e64dc71c9a40988cbdc65c264cb0e489db7de917f20dcf4d64d8723625f2969ba52d4b7e2a1170682d9ac2a5dcaeaab732b7e16f04a"
 }
